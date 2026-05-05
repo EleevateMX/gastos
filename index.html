@@ -278,6 +278,42 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
+  /* Animación pulso suave para el botón hero */
+  @keyframes heroBreathe {
+    0%, 100% { box-shadow: 0 8px 24px rgba(46, 178, 71, 0.35); }
+    50% { box-shadow: 0 12px 32px rgba(46, 178, 71, 0.5); }
+  }
+
+  /* Animación deslizar al eliminar */
+  @keyframes slideOutLeft {
+    to { opacity: 0; transform: translateX(-40px); height: 0; padding: 0; margin: 0; border: 0; }
+  }
+
+  /* Animación entrada escalonada para items */
+  @keyframes slideInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Pop al actualizar números */
+  @keyframes pop {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.08); color: var(--green); }
+    100% { transform: scale(1); }
+  }
+
+  /* Check de éxito animado */
+  @keyframes drawCheck {
+    0% { stroke-dashoffset: 50; }
+    100% { stroke-dashoffset: 0; }
+  }
+
+  @keyframes circlePop {
+    0% { transform: scale(0); }
+    60% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+
   .section-title {
     font-family: 'Montserrat', sans-serif;
     font-size: 28px; font-weight: 800;
@@ -310,6 +346,7 @@
     font-family: inherit;
     position: relative;
     overflow: hidden;
+    animation: heroBreathe 3s ease-in-out infinite;
   }
 
   .hero-action::after {
@@ -443,6 +480,12 @@
     box-shadow: var(--shadow-sm);
     position: relative;
     overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
   }
 
   .stat-card::before {
@@ -480,7 +523,10 @@
     padding: 16px 0;
     border-bottom: 1px solid var(--line-soft);
     flex-wrap: wrap;
+    animation: slideInUp 0.3s ease-out backwards;
+    transition: background 0.15s;
   }
+  .expense-item:hover { background: var(--line-soft); }
   .expense-item:last-child { border-bottom: none; }
 
   .expense-date {
@@ -704,6 +750,13 @@
   }
   .cat-totals tr.total-row td.amount { color: var(--green-deep); }
 
+  /* ============= EXPORT GRID ============= */
+  .export-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
   /* ============= MONTH SELECTOR ============= */
   .month-selector {
     display: flex;
@@ -814,6 +867,73 @@
   }
   .modal-close:hover { background: var(--green-deep); }
 
+  /* ============= SUCCESS OVERLAY ============= */
+  .success-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(20, 37, 107, 0.6);
+    backdrop-filter: blur(6px);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .success-overlay.show { display: flex; }
+
+  .success-card {
+    background: var(--bg-card);
+    border-radius: 20px;
+    padding: 36px 40px;
+    text-align: center;
+    box-shadow: var(--shadow-lg);
+    animation: slideInUp 0.3s ease-out;
+  }
+
+  .success-circle {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: var(--green);
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: circlePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .success-circle svg {
+    width: 44px; height: 44px;
+    stroke: #fff;
+    stroke-width: 4;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .success-circle svg path {
+    stroke-dasharray: 50;
+    stroke-dashoffset: 50;
+    animation: drawCheck 0.4s ease-out 0.2s forwards;
+  }
+
+  .success-card .title {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+
+  .success-card .subtitle {
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  /* Pop en valores actualizados */
+  .pop-anim { animation: pop 0.5s ease-out; }
+
+  /* Items deslizándose hacia afuera al eliminar */
+  .removing { animation: slideOutLeft 0.3s ease-in forwards; }
+
   /* ============= EMPTY ============= */
   .empty {
     text-align: center;
@@ -871,6 +991,7 @@
     .hero-action .text-title { font-size: 18px; }
     .hero-action .plus { width: 48px; height: 48px; font-size: 28px; }
     .quick-actions { grid-template-columns: 1fr; }
+    .export-grid { grid-template-columns: 1fr; }
     .edit-modal { padding: 20px; }
   }
 </style>
@@ -1000,6 +1121,25 @@
           </thead>
           <tbody></tbody>
         </table>
+      </div>
+
+      <!-- 📥 EXPORTAR (solo admins) -->
+      <div class="card" id="export-section" style="display:none;">
+        <div class="card-header">
+          <div class="icon-box green">📥</div>
+          <h3>Exportar para la contadora</h3>
+        </div>
+        <p style="color:var(--ink-soft); margin-bottom:18px; font-size:14px;">
+          Descarga los gastos en un archivo Excel/CSV. Puedes elegir el mes que estás viendo o todo el historial.
+        </p>
+        <div class="export-grid">
+          <button class="btn btn-primary" onclick="exportarMes()">
+            📄 Exportar mes actual
+          </button>
+          <button class="btn btn-green" onclick="exportarTodo()">
+            📚 Exportar todo
+          </button>
+        </div>
       </div>
     </section>
 
@@ -1160,18 +1300,33 @@
 <!-- Toast -->
 <div id="toast" class="toast"></div>
 
+<!-- Overlay de éxito con check animado -->
+<div id="success-overlay" class="success-overlay">
+  <div class="success-card">
+    <div class="success-circle">
+      <svg viewBox="0 0 50 50">
+        <path d="M14 25 L22 33 L36 17"></path>
+      </svg>
+    </div>
+    <div class="title" id="success-title">¡Guardado!</div>
+    <div class="subtitle" id="success-subtitle">Tu gasto se registró correctamente</div>
+  </div>
+</div>
+
 <script>
 /* =====================================================
    CONFIGURACIÓN
    ===================================================== */
-const API_URL = "https://script.google.com/macros/s/AKfycbykcvVo9b9yEUGiAoDiIEJKaOjTTVp67C3w3eKmqAQHcAHVvMbotOjYfbyk1b_9_OU-9Q/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwPvN7DPdJaQVeWetTepwQNpjkWfhf81Ylz734I7CSl0SRI9j7DlTMbx47TXCwUXCeqfg/exec";
 
+// Usuarios autorizados. Las llaves se comparan en minúsculas (ver lógica de login).
+// admin → puede agregar, editar, eliminar gastos, exportar y actualizar dólares
+// user  → solo puede agregar y consultar
 const USUARIOS = {
-  "Carolina":  { password: "Carolina2026",  role: "admin", nombre: "Carolina" },
-  "Edy":       { password: "Edy2026",       role: "admin", nombre: "Edy" },
-  "Familia":   { password: "Familia2026",   role: "user",  nombre: "Familia" }
-  "Angelica":   { password: "Angelica2026#",   role: "user",  nombre: "Angelica" }
-  "Julio":   { password: "Julio2026",   role: "user",  nombre: "Julio" }
+  "edy":      { password: "2026#",  role: "admin", nombre: "Edy" },
+  "angelica": { password: "2026#",  role: "admin", nombre: "Angélica" },
+  "julio":    { password: "2026",   role: "user",  nombre: "Julio" },
+  "carolina": { password: "2026",   role: "user",  nombre: "Carolina" }
 };
 
 let currentUser = null;
@@ -1189,7 +1344,7 @@ const loginError = document.getElementById('login-error');
 
 loginForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  const u = document.getElementById('username').value.trim();
+  const u = document.getElementById('username').value.trim().toLowerCase();
   const p = document.getElementById('password').value;
 
   const user = USUARIOS[u];
@@ -1213,6 +1368,7 @@ function entrarApp() {
   if (currentUser.role === 'admin') {
     document.getElementById('user-badge').style.display = 'inline-block';
     document.getElementById('admin-dlls-section').style.display = 'block';
+    document.getElementById('export-section').style.display = 'block';
   }
 
   inicializarApp();
@@ -1423,8 +1579,12 @@ function setupForm() {
     btn.textContent = oldText;
 
     if (res.ok || res.demo) {
-      toast(editingTimestamp ? "Gasto actualizado ✓" : "Gasto guardado ✓", "success");
       cerrarFormModal();
+      if (editingTimestamp) {
+        showSuccess('¡Actualizado!', 'Los cambios se guardaron correctamente');
+      } else {
+        showSuccess('¡Gasto registrado!', `$${data.monto.toLocaleString('es-MX')} en ${data.categoria}`);
+      }
       cargarDatos();
     } else {
       toast("Error: " + (res.error || ''), "error");
@@ -1444,12 +1604,25 @@ async function eliminarGasto(ts) {
     return;
   }
 
+  // Animar la fila antes de eliminar (busca el item por su data attribute)
+  const items = document.querySelectorAll('#expense-list .expense-item');
+  items.forEach(item => {
+    if (item.getAttribute('data-ts') === String(ts)) {
+      item.classList.add('removing');
+    }
+  });
+
+  // Pequeña pausa para que se vea la animación
+  await new Promise(r => setTimeout(r, 250));
+
   const res = await apiCall('delete', { timestamp: ts });
   if (res.ok || res.demo) {
     toast("Gasto eliminado", "success");
     cargarDatos();
   } else {
     toast("Error al eliminar: " + (res.error || ''), "error");
+    // si falla, quitar la clase removing
+    items.forEach(item => item.classList.remove('removing'));
   }
 }
 
@@ -1489,12 +1662,27 @@ function renderResumen() {
   });
 
   const total = delMes.reduce((s, g) => s + Number(g.monto || 0), 0);
-  document.getElementById('stat-total').textContent = formatMoney(total);
-  document.getElementById('stat-count').textContent = delMes.length;
+  const elTotal = document.getElementById('stat-total');
+  const elCount = document.getElementById('stat-count');
+  const elSaldo = document.getElementById('stat-saldo-dlls');
+
+  // Solo animar si el valor cambia
+  const oldTotal = elTotal.textContent;
+  const newTotal = formatMoney(total);
+  elTotal.textContent = newTotal;
+  if (oldTotal !== newTotal && oldTotal !== '$0.00') popValue('stat-total');
+
+  const oldCount = elCount.textContent;
+  const newCount = String(delMes.length);
+  elCount.textContent = newCount;
+  if (oldCount !== newCount && oldCount !== '0') popValue('stat-count');
 
   const rate = parseFloat(document.getElementById('usd-rate').value) || 17;
   const totalDlls = (dollarsState.efectivo + dollarsState.banco);
-  document.getElementById('stat-saldo-dlls').textContent = formatMoney(totalDlls * rate);
+  const newSaldo = formatMoney(totalDlls * rate);
+  const oldSaldo = elSaldo.textContent;
+  elSaldo.textContent = newSaldo;
+  if (oldSaldo !== newSaldo && oldSaldo !== '$0.00') popValue('stat-saldo-dlls');
 
   const cats = {};
   delMes.forEach(g => {
@@ -1540,7 +1728,7 @@ function renderHistorial() {
   const ordenados = lista.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
   const isAdmin = currentUser.role === 'admin';
 
-  ul.innerHTML = ordenados.map(g => {
+  ul.innerHTML = ordenados.map((g, idx) => {
     const d = new Date(g.fecha);
     const dia = d.getDate();
     const mesCorto = MESES_CORTOS[d.getMonth()];
@@ -1555,8 +1743,11 @@ function renderHistorial() {
         <button class="action-btn delete" onclick="eliminarGasto(${g.timestamp})" title="Eliminar">×</button>
       </div>` : '';
 
+    // Solo animar los primeros 12, así no se sienten los retrasos en listas largas
+    const delay = idx < 12 ? `style="animation-delay: ${idx * 0.03}s"` : '';
+
     return `
-      <li class="expense-item">
+      <li class="expense-item" data-ts="${g.timestamp}" ${delay}>
         <div class="expense-date">
           <div class="day">${dia}</div>
           <div class="month">${mesCorto}</div>
@@ -1639,6 +1830,118 @@ function renderDolares() {
   document.getElementById('adm-banco').value = dollarsState.banco;
 }
 
+/* ===== EXPORTAR ===== */
+function exportarMes() {
+  const mesActual = selectedMonth.getMonth();
+  const yearActual = selectedMonth.getFullYear();
+  const delMes = gastos.filter(g => {
+    const f = new Date(g.fecha);
+    return f.getMonth() === mesActual && f.getFullYear() === yearActual;
+  });
+
+  if (delMes.length === 0) {
+    toast("No hay gastos para exportar este mes", "error");
+    return;
+  }
+
+  const nombre = `Gastos_${MESES[mesActual]}_${yearActual}.csv`;
+  descargarCSV(delMes, nombre, mesActual, yearActual);
+  toast(`Descargando ${delMes.length} gastos de ${MESES[mesActual]}…`, "success");
+}
+
+function exportarTodo() {
+  if (gastos.length === 0) {
+    toast("No hay gastos para exportar", "error");
+    return;
+  }
+  const nombre = `Gastos_Historial_Completo_${formatearFechaArchivo(new Date())}.csv`;
+  descargarCSV(gastos, nombre, null, null);
+  toast(`Descargando ${gastos.length} gastos…`, "success");
+}
+
+function descargarCSV(lista, nombre, mes, year) {
+  // Ordenar por fecha
+  const ordenados = [...lista].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+  // Encabezado con metadata
+  const titulo = (mes !== null)
+    ? `Reporte de Gastos - ${MESES[mes]} ${year}`
+    : 'Historial completo de gastos';
+
+  const total = ordenados.reduce((s, g) => s + Number(g.monto || 0), 0);
+
+  // Calcular totales por categoría
+  const cats = {};
+  ordenados.forEach(g => {
+    cats[g.categoria] = (cats[g.categoria] || 0) + Number(g.monto || 0);
+  });
+
+  // BOM para que Excel reconozca UTF-8 (acentos)
+  let csv = '\uFEFF';
+
+  csv += `"${titulo}"\r\n`;
+  csv += `"Generado:","${new Date().toLocaleString('es-MX')}"\r\n`;
+  csv += `"Generado por:","${currentUser.nombre}"\r\n`;
+  csv += `"Total de movimientos:","${ordenados.length}"\r\n`;
+  csv += `"TOTAL:","$${total.toFixed(2)} MXN"\r\n`;
+  csv += `\r\n`;
+
+  // Resumen por categoría
+  csv += `"RESUMEN POR CATEGORÍA"\r\n`;
+  csv += `"Categoría","Monto"\r\n`;
+  const orden = ['Enfermeras','Super','Análisis Doctor','Personales','Efectivo'];
+  orden.forEach(cat => {
+    if (cats[cat] !== undefined) {
+      csv += `"${cat}","$${cats[cat].toFixed(2)}"\r\n`;
+    }
+  });
+  Object.keys(cats).forEach(cat => {
+    if (!orden.includes(cat)) {
+      csv += `"${cat}","$${cats[cat].toFixed(2)}"\r\n`;
+    }
+  });
+  csv += `"TOTAL","$${total.toFixed(2)}"\r\n`;
+  csv += `\r\n`;
+
+  // Detalle de gastos
+  csv += `"DETALLE DE GASTOS"\r\n`;
+  csv += `"Fecha","Categoría","Descripción","Monto","Usuario","Foto"\r\n`;
+  ordenados.forEach(g => {
+    const fecha = g.fecha;
+    const cat = String(g.categoria || '').replace(/"/g, '""');
+    const desc = String(g.descripcion || '').replace(/"/g, '""');
+    const monto = Number(g.monto || 0).toFixed(2);
+    const usr = String(g.usuario || '').replace(/"/g, '""');
+    const foto = g.foto ? g.foto : '';
+    csv += `"${fecha}","${cat}","${desc}","${monto}","${usr}","${foto}"\r\n`;
+  });
+
+  // Saldo de dólares al final
+  csv += `\r\n`;
+  csv += `"SALDO DE DÓLARES"\r\n`;
+  csv += `"USD Efectivo","$${dollarsState.efectivo.toFixed(2)}"\r\n`;
+  csv += `"USD Banco","$${dollarsState.banco.toFixed(2)}"\r\n`;
+  csv += `"Total USD","$${(dollarsState.efectivo + dollarsState.banco).toFixed(2)}"\r\n`;
+
+  // Crear archivo y descargar
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nombre;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function formatearFechaArchivo(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 /* ===== HELPERS ===== */
 function formatMoney(n) {
   return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -1656,6 +1959,23 @@ function toast(msg, type='') {
   el.textContent = msg;
   clearTimeout(window._toastT);
   window._toastT = setTimeout(() => el.className = 'toast', 3000);
+}
+
+function showSuccess(title, subtitle) {
+  document.getElementById('success-title').textContent = title || '¡Guardado!';
+  document.getElementById('success-subtitle').textContent = subtitle || 'La operación se completó correctamente';
+  const ov = document.getElementById('success-overlay');
+  ov.classList.add('show');
+  setTimeout(() => ov.classList.remove('show'), 1400);
+}
+
+function popValue(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.classList.remove('pop-anim');
+  // forzar reflow para reiniciar animación
+  void el.offsetWidth;
+  el.classList.add('pop-anim');
 }
 
 function verFoto(url) {
