@@ -1210,8 +1210,15 @@
 
     <!-- ===== HISTORIAL ===== -->
     <section id="panel-historial" class="panel">
-      <h2 class="section-title">Historial <span class="accent">completo</span></h2>
-      <p class="section-subtitle">Todos los movimientos registrados, del más reciente al más antiguo.</p>
+      <h2 class="section-title">Historial <span class="accent">del mes</span></h2>
+      <p class="section-subtitle">Solo los movimientos del mes elegido, del más reciente al más antiguo.</p>
+
+      <div class="month-selector">
+        <button class="month-nav" onclick="cambiarMes(-1)">‹</button>
+        <div class="month-current" id="month-current-h">—</div>
+        <button class="month-nav" onclick="cambiarMes(1)">›</button>
+      </div>
+      <p id="historial-total" style="text-align:center; color:var(--ink-soft); margin:-6px 0 18px; font-size:14px;"></p>
 
       <div class="field">
         <label for="filter-cat">Filtrar por categoría</label>
@@ -1230,7 +1237,7 @@
         <ul class="expense-list" id="expense-list"></ul>
         <div id="expense-empty" class="empty" style="display:none;">
           <div class="icon">📋</div>
-          <p>No hay gastos para mostrar.</p>
+          <p>No hay gastos en este mes.</p>
         </div>
       </div>
     </section>
@@ -1334,7 +1341,8 @@ const USUARIOS = {
 let currentUser = null;
 let gastos = [];
 let dollarsState = { efectivo: 0, banco: 0 };
-let selectedMonth = new Date(); // mes mostrado en resumen
+let selectedMonth = new Date(); // mes mostrado en resumen e historial
+selectedMonth.setDate(1);        // día 1: así cambiar de mes nunca se salta uno (31 oct + 1 mes = 1 dic)
 let editingTimestamp = null;     // si != null, estamos editando
 let nuevoTimestamp = null;       // id fijo del gasto nuevo: si se reintenta, es el mismo gasto
 
@@ -1464,13 +1472,21 @@ function renderTodo() {
 
 /* ===== MES SELECTOR ===== */
 function cambiarMes(delta) {
-  selectedMonth.setMonth(selectedMonth.getMonth() + delta);
+  selectedMonth = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + delta, 1);
   actualizarLabelMes();
   renderResumen();
+  renderHistorial();
+}
+
+function esDelMesSeleccionado(g) {
+  const f = fechaLocal(g.fecha);
+  return f.getMonth() === selectedMonth.getMonth() && f.getFullYear() === selectedMonth.getFullYear();
 }
 
 function actualizarLabelMes() {
-  document.getElementById('month-current').textContent = MESES[selectedMonth.getMonth()] + ' ' + selectedMonth.getFullYear();
+  const label = MESES[selectedMonth.getMonth()] + ' ' + selectedMonth.getFullYear();
+  document.getElementById('month-current').textContent = label;
+  document.getElementById('month-current-h').textContent = label;
 }
 
 /* ===== ABRIR/CERRAR MODAL DE GASTO ===== */
@@ -1737,9 +1753,14 @@ function renderHistorial() {
   const empty = document.getElementById('expense-empty');
   const filterCat = document.getElementById('filter-cat').value;
 
-  let lista = [...gastos];
+  let lista = gastos.filter(esDelMesSeleccionado);
   if (filterCat === 'Cambio USD') lista = lista.filter(esCambioUSD);
   else if (filterCat) lista = lista.filter(g => g.categoria === filterCat && !esCambioUSD(g));
+
+  const sumaGastos = lista.filter(g => !esCambioUSD(g)).reduce((s, g) => s + Number(g.monto || 0), 0);
+  const nGastos = lista.filter(g => !esCambioUSD(g)).length;
+  document.getElementById('historial-total').textContent =
+    `${nGastos} ${nGastos === 1 ? 'gasto' : 'gastos'} · Total ${formatMoney(sumaGastos)}`;
 
   if (lista.length === 0) {
     ul.innerHTML = '';
