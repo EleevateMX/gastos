@@ -1230,7 +1230,7 @@
           <div class="label">Equivale a</div>
           <div class="amount">$<span id="usd-result">0.00</span> <span class="currency">MXN</span></div>
           <button class="add-as-expense" id="btn-cambio-a-gasto" onclick="cambioAGasto()" style="display:none;">
-            ➕ Registrar cambio de dólares
+            ➕ Registrar cambio de dólares (se descuenta del efectivo USD)
           </button>
         </div>
       </div>
@@ -1651,6 +1651,9 @@ function setupForm() {
       }
     }
 
+    const anterior = editingTimestamp ? gastos.find(x => String(x.timestamp) === String(editingTimestamp)) : null;
+    const usdAntes = usdDeCambio(anterior);
+
     let res;
     if (editingTimestamp) {
       data.timestamp = editingTimestamp;
@@ -1680,6 +1683,9 @@ function setupForm() {
       } else {
         showSuccess(esCambioUSD(data) ? '¡Cambio registrado!' : '¡Gasto registrado!', `$${data.monto.toLocaleString('es-MX')} en ${data.categoria}`);
       }
+      // Saldo de dólares siempre parejo: lo que sale en un cambio se descuenta del efectivo.
+      const usdDespues = usdDeCambio(data);
+      if (usdDespues !== usdAntes) await ajustarDolaresEfectivo(usdAntes - usdDespues);
       cargarDatos();
     } else {
       toast("Error: " + (res.error || ''), "error");
@@ -1713,6 +1719,10 @@ async function eliminarGasto(ts) {
   const res = await apiCall('delete', { timestamp: ts });
   if (res.ok || res.demo) {
     toast("Gasto eliminado", "success");
+    const usd = usdDeCambio(g);
+    if (usd > 0 && confirm(`Este era un cambio de ${formatUSD(usd)}.\n¿Regresar esos dólares al saldo de efectivo?`)) {
+      await ajustarDolaresEfectivo(usd);
+    }
     cargarDatos();
   } else {
     toast("Error al eliminar: " + (res.error || ''), "error");
@@ -1830,8 +1840,8 @@ function etiquetaCambio(claveDelMes) {
   const { total } = sumaSinCambios(delMes);
   const dif = Math.round((totalCambio - total) * 100) / 100;
   const detalle = cambios.map(g => {
-    const m = String(g.descripcion || '').match(/([\d.,]+)\s*USD\s*@\s*([\d.]+)/i);
-    return m ? `${m[1]} USD @ ${m[2]}` : '';
+    const m = String(g.descripcion || '').match(/(\d[\d.,]*)\s*USD(?:\s*@\s*([\d.]+))?/i);
+    return m ? `${m[1]} USD${m[2] ? ' @ ' + m[2] : ''}` : '';
   }).filter(Boolean).join(' + ');
   let estado;
   if (Math.abs(dif) < 1) {
@@ -1843,6 +1853,34 @@ function etiquetaCambio(claveDelMes) {
   }
   return `<span class="tag-cambio" title="${escapeHTML(cambios.map(g => g.descripcion).join(' | '))}">
     💵 Cambio de dólares ${formatMoney(totalCambio)}${detalle ? ` · ${escapeHTML(detalle)}` : ''} · ${estado}</span>`;
+}
+
+// Dólares que salieron en un cambio, leídos de la descripción ("Cambio 2979 USD ...").
+function usdDeCambio(g) {
+  if (!g || !esCambioUSD(g)) return 0;
+  const m = String(g.descripcion || '').match(/(\d[\d,]*(?:\.\d+)?)\s*USD/i);
+  return m ? parseFloat(m[1].replace(/,/g, '')) || 0 : 0;
+}
+
+// Mueve el saldo de USD en efectivo (negativo = salen dólares). Lee el saldo fresco del
+// Sheet antes de escribir, para no pisar un cambio que alguien más acaba de hacer.
+async function ajustarDolaresEfectivo(deltaUSD) {
+  deltaUSD = Math.round(deltaUSD * 100) / 100;
+  if (!deltaUSD) return;
+  const fresco = await apiCall('list');
+  const base = (fresco.ok && fresco.dollars) ? fresco.dollars : dollarsState;
+  const efectivo = Math.round((Number(base.efectivo || 0) + deltaUSD) * 100) / 100;
+  const res = await apiCall('updateDollars', { efectivo, banco: Number(base.banco || 0) });
+  if (res.ok || res.demo) {
+    dollarsState = { efectivo, banco: Number(base.banco || 0) };
+    renderDolares();
+    renderResumen();
+    toast(deltaUSD < 0
+      ? `Se descontaron ${formatUSD(-deltaUSD)} del efectivo en dólares`
+      : `Se regresaron ${formatUSD(deltaUSD)} al efectivo en dólares`, "success");
+  } else {
+    toast("El cambio se guardó, pero NO se pudo actualizar el saldo de dólares. Actualízalo a mano.", "error");
+  }
 }
 
 function sumaSinCambios(lista) {
