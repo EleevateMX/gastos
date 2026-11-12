@@ -833,6 +833,27 @@
   .month-group-header .name { font-size: 15px; font-weight: 800; color: var(--navy); }
   .month-group-header .sum { font-size: 13px; font-weight: 600; color: var(--ink-soft); text-align: right; }
 
+  /* Etiqueta del cambio de dólares del mes */
+  .tag-cambio {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    justify-content: center;
+    background: #fff7e6;
+    border: 1px solid var(--gold);
+    color: #7a5100;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .tag-cambio .ok { color: var(--green-deep); }
+  .tag-cambio .dif { color: var(--red); }
+  .tag-cambio-box { text-align: center; margin-top: 8px; }
+  .month-group-header .tag-cambio { margin-top: 6px; }
+
   /* ============= TOAST ============= */
   .toast {
     position: fixed;
@@ -1785,9 +1806,9 @@ function renderResumen() {
     tbody.innerHTML += `<tr class="total-row"><td>TOTAL</td><td class="amount">${formatMoney(total)}</td></tr>`;
   }
   if (totalCambios > 0) {
-    tbody.innerHTML += `<tr><td colspan="2" style="padding-top:18px; font-size:13px; color:var(--ink-soft);">
-      Cambios de dólares a pesos este mes: <strong>${formatMoney(totalCambios)}</strong> (${cambiosMes.length})<br>
-      No se suman al total: ese dinero ya aparece en los gastos que se pagaron con él.</td></tr>`;
+    tbody.innerHTML += `<tr><td colspan="2" style="padding-top:18px; text-align:center;">
+      ${etiquetaCambio(yearActual * 12 + mesActual)}
+      <div style="font-size:12px; color:var(--ink-soft); margin-top:6px;">No se suma al total: ese dinero ya aparece en los gastos que se pagaron con él.</div></td></tr>`;
   }
 }
 
@@ -1799,6 +1820,31 @@ function claveMes(g) {
 function nombreMes(clave) {
   return MESES[clave % 12] + ' ' + Math.floor(clave / 12);
 }
+// Etiqueta: "Cambio de dólares $X · cuadra (redondeo $0.05)" comparando contra los gastos del mes.
+// Las diferencias menores a $1 vienen del redondeo del tipo de cambio.
+function etiquetaCambio(claveDelMes) {
+  const delMes = gastos.filter(g => claveMes(g) === claveDelMes);
+  const cambios = delMes.filter(esCambioUSD);
+  if (!cambios.length) return '';
+  const totalCambio = cambios.reduce((s, g) => s + Number(g.monto || 0), 0);
+  const { total } = sumaSinCambios(delMes);
+  const dif = Math.round((totalCambio - total) * 100) / 100;
+  const detalle = cambios.map(g => {
+    const m = String(g.descripcion || '').match(/([\d.,]+)\s*USD\s*@\s*([\d.]+)/i);
+    return m ? `${m[1]} USD @ ${m[2]}` : '';
+  }).filter(Boolean).join(' + ');
+  let estado;
+  if (Math.abs(dif) < 1) {
+    estado = `<span class="ok">✓ cuadra${dif !== 0 ? ` (redondeo ${dif > 0 ? '+' : '−'}${formatMoney(Math.abs(dif))})` : ''}</span>`;
+  } else {
+    estado = dif > 0
+      ? `sobran ${formatMoney(dif)} sobre los gastos del mes`
+      : `<span class="dif">faltan ${formatMoney(-dif)} para cubrir los gastos del mes</span>`;
+  }
+  return `<span class="tag-cambio" title="${escapeHTML(cambios.map(g => g.descripcion).join(' | '))}">
+    💵 Cambio de dólares ${formatMoney(totalCambio)}${detalle ? ` · ${escapeHTML(detalle)}` : ''} · ${estado}</span>`;
+}
+
 function sumaSinCambios(lista) {
   const reales = lista.filter(g => !esCambioUSD(g));
   return { n: reales.length, total: reales.reduce((s, g) => s + Number(g.monto || 0), 0) };
@@ -1894,8 +1940,10 @@ function renderHistorial() {
   const lista = gastos.filter(g => pasaFiltro(g) && (historialTodos || esDelMesSeleccionado(g)));
 
   const { n: nGastos, total: sumaGastos } = sumaSinCambios(lista);
-  document.getElementById('historial-total').textContent =
-    `${nGastos} ${nGastos === 1 ? 'gasto' : 'gastos'} · Total ${formatMoney(sumaGastos)}`;
+  const tagMes = historialTodos ? '' : etiquetaCambio(selectedMonth.getFullYear() * 12 + selectedMonth.getMonth());
+  document.getElementById('historial-total').innerHTML =
+    `${nGastos} ${nGastos === 1 ? 'gasto' : 'gastos'} · Total ${formatMoney(sumaGastos)}` +
+    (tagMes ? `<div class="tag-cambio-box">${tagMes}</div>` : '');
   empty.querySelector('p').textContent = historialTodos ? 'No hay gastos para mostrar.' : 'No hay gastos en este mes.';
 
   if (lista.length === 0) {
@@ -1925,7 +1973,7 @@ function renderHistorial() {
     const { n, total } = sumaSinCambios(gr.items);
     return `<li class="month-group-header">
         <span class="name">${nombreMes(gr.k)}</span>
-        <span class="sum">${n} ${n === 1 ? 'gasto' : 'gastos'} · ${formatMoney(total)}</span>
+        <span class="sum">${n} ${n === 1 ? 'gasto' : 'gastos'} · ${formatMoney(total)}${etiquetaCambio(gr.k) ? `<br>${etiquetaCambio(gr.k)}` : ''}</span>
       </li>` + gr.items.map(g => renderItemGasto(g, idx++, isAdmin)).join('');
   }).join('');
 }
@@ -2012,7 +2060,7 @@ function exportarMes() {
 
   const nombre = `Gastos_${MESES[mesActual]}_${yearActual}.csv`;
   descargarCSV(delMes, nombre, mesActual, yearActual);
-  toast(`Descargando ${delMes.length} gastos de ${MESES[mesActual]}…`, "success");
+  toast(`Descargando ${delMes.filter(g => !esCambioUSD(g)).length} gastos de ${MESES[mesActual]}…`, "success");
 }
 
 function exportarTodo() {
@@ -2092,6 +2140,13 @@ function descargarCSV(lista, nombre, mes, year) {
     cambios.forEach(g => {
       csv += `"${g.fecha}","${String(g.descripcion || '').replace(/"/g, '""')}","${Number(g.monto || 0).toFixed(2)}","${String(g.usuario || '').replace(/"/g, '""')}"\r\n`;
     });
+    if (mes !== null) {
+      const totalCambio = cambios.reduce((s, g) => s + Number(g.monto || 0), 0);
+      const dif = Math.round((totalCambio - total) * 100) / 100;
+      csv += `"Total cambio de dólares:","$${totalCambio.toFixed(2)}"\r\n`;
+      csv += `"Total gastos del mes:","$${total.toFixed(2)}"\r\n`;
+      csv += `"Diferencia:","$${dif.toFixed(2)}","${Math.abs(dif) < 1 ? 'Cuadra (redondeo del tipo de cambio)' : (dif > 0 ? 'Sobra' : 'Falta')}"\r\n`;
+    }
   }
 
   // Saldo de dólares al final
