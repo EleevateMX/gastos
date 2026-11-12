@@ -1168,7 +1168,7 @@
           <div class="label">Equivale a</div>
           <div class="amount">$<span id="usd-result">0.00</span> <span class="currency">MXN</span></div>
           <button class="add-as-expense" id="btn-cambio-a-gasto" onclick="cambioAGasto()" style="display:none;">
-            ➕ Registrar como retiro de efectivo
+            ➕ Registrar cambio de dólares
           </button>
         </div>
       </div>
@@ -1222,6 +1222,7 @@
           <option value="Análisis Doctor">Análisis / Doctor</option>
           <option value="Personales">Personales</option>
           <option value="Efectivo">Efectivo</option>
+          <option value="Cambio USD">Cambio de dólares (no suma)</option>
         </select>
       </div>
 
@@ -1265,6 +1266,7 @@
           <option value="Análisis Doctor">Análisis / Doctor</option>
           <option value="Personales">Personales</option>
           <option value="Efectivo">Efectivo</option>
+          <option value="Cambio USD">Cambio de dólares (no suma)</option>
         </select>
       </div>
 
@@ -1334,6 +1336,7 @@ let gastos = [];
 let dollarsState = { efectivo: 0, banco: 0 };
 let selectedMonth = new Date(); // mes mostrado en resumen
 let editingTimestamp = null;     // si != null, estamos editando
+let nuevoTimestamp = null;       // id fijo del gasto nuevo: si se reintenta, es el mismo gasto
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -1473,13 +1476,14 @@ function actualizarLabelMes() {
 /* ===== ABRIR/CERRAR MODAL DE GASTO ===== */
 function abrirAgregarGasto(prefill) {
   editingTimestamp = null;
+  nuevoTimestamp = Date.now();
   document.getElementById('form-modal-title').textContent = 'Agregar gasto';
   document.getElementById('btn-guardar').textContent = 'Guardar gasto';
 
   const form = document.getElementById('form-gasto');
   form.reset();
   document.getElementById('g-timestamp').value = '';
-  document.getElementById('g-fecha').value = new Date().toISOString().split('T')[0];
+  document.getElementById('g-fecha').value = hoyISO();
   document.getElementById('foto-preview').innerHTML = '<span class="placeholder">No has elegido foto</span>';
 
   if (prefill) {
@@ -1571,8 +1575,17 @@ function setupForm() {
       data.timestamp = editingTimestamp;
       res = await apiCall('update', data);
     } else {
-      data.timestamp = Date.now();
+      data.timestamp = nuevoTimestamp || Date.now();
+      nuevoTimestamp = data.timestamp;
       res = await apiCall('add', data);
+      // Si la respuesta falló (Apps Script lento, sin señal), puede que la fila SÍ se haya
+      // guardado. Revisamos antes de decir "error" para que nadie lo vuelva a capturar.
+      if (!res.ok && !res.demo) {
+        const check = await apiCall('list');
+        if (check.ok && (check.gastos || []).some(g => String(g.timestamp) === String(data.timestamp))) {
+          res = { ok: true };
+        }
+      }
     }
 
     btn.disabled = false;
@@ -1580,10 +1593,11 @@ function setupForm() {
 
     if (res.ok || res.demo) {
       cerrarFormModal();
+      if (!editingTimestamp) nuevoTimestamp = null;
       if (editingTimestamp) {
         showSuccess('¡Actualizado!', 'Los cambios se guardaron correctamente');
       } else {
-        showSuccess('¡Gasto registrado!', `$${data.monto.toLocaleString('es-MX')} en ${data.categoria}`);
+        showSuccess(esCambioUSD(data) ? '¡Cambio registrado!' : '¡Gasto registrado!', `$${data.monto.toLocaleString('es-MX')} en ${data.categoria}`);
       }
       cargarDatos();
     } else {
@@ -1657,11 +1671,14 @@ function renderResumen() {
   const yearActual = selectedMonth.getFullYear();
 
   const delMes = gastos.filter(g => {
-    const f = new Date(g.fecha);
+    const f = fechaLocal(g.fecha);
     return f.getMonth() === mesActual && f.getFullYear() === yearActual;
   });
 
-  const total = delMes.reduce((s, g) => s + Number(g.monto || 0), 0);
+  const cambiosMes = delMes.filter(esCambioUSD);
+  const gastosMes  = delMes.filter(g => !esCambioUSD(g));
+  const total = gastosMes.reduce((s, g) => s + Number(g.monto || 0), 0);
+  const totalCambios = cambiosMes.reduce((s, g) => s + Number(g.monto || 0), 0);
   const elTotal = document.getElementById('stat-total');
   const elCount = document.getElementById('stat-count');
   const elSaldo = document.getElementById('stat-saldo-dlls');
@@ -1673,7 +1690,7 @@ function renderResumen() {
   if (oldTotal !== newTotal && oldTotal !== '$0.00') popValue('stat-total');
 
   const oldCount = elCount.textContent;
-  const newCount = String(delMes.length);
+  const newCount = String(gastosMes.length);
   elCount.textContent = newCount;
   if (oldCount !== newCount && oldCount !== '0') popValue('stat-count');
 
@@ -1685,7 +1702,7 @@ function renderResumen() {
   if (oldSaldo !== newSaldo && oldSaldo !== '$0.00') popValue('stat-saldo-dlls');
 
   const cats = {};
-  delMes.forEach(g => {
+  gastosMes.forEach(g => {
     cats[g.categoria] = (cats[g.categoria] || 0) + Number(g.monto || 0);
   });
 
@@ -1707,6 +1724,11 @@ function renderResumen() {
   } else {
     tbody.innerHTML += `<tr class="total-row"><td>TOTAL</td><td class="amount">${formatMoney(total)}</td></tr>`;
   }
+  if (totalCambios > 0) {
+    tbody.innerHTML += `<tr><td colspan="2" style="padding-top:18px; font-size:13px; color:var(--ink-soft);">
+      Cambios de dólares a pesos este mes: <strong>${formatMoney(totalCambios)}</strong> (${cambiosMes.length})<br>
+      No se suman al total: ese dinero ya aparece en los gastos que se pagaron con él.</td></tr>`;
+  }
 }
 
 /* ===== RENDER HISTORIAL ===== */
@@ -1716,7 +1738,8 @@ function renderHistorial() {
   const filterCat = document.getElementById('filter-cat').value;
 
   let lista = [...gastos];
-  if (filterCat) lista = lista.filter(g => g.categoria === filterCat);
+  if (filterCat === 'Cambio USD') lista = lista.filter(esCambioUSD);
+  else if (filterCat) lista = lista.filter(g => g.categoria === filterCat && !esCambioUSD(g));
 
   if (lista.length === 0) {
     ul.innerHTML = '';
@@ -1725,11 +1748,11 @@ function renderHistorial() {
   }
   empty.style.display = 'none';
 
-  const ordenados = lista.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const ordenados = lista.sort((a, b) => fechaLocal(b.fecha) - fechaLocal(a.fecha));
   const isAdmin = currentUser.role === 'admin';
 
   ul.innerHTML = ordenados.map((g, idx) => {
-    const d = new Date(g.fecha);
+    const d = fechaLocal(g.fecha);
     const dia = d.getDate();
     const mesCorto = MESES_CORTOS[d.getMonth()];
 
@@ -1754,7 +1777,7 @@ function renderHistorial() {
         </div>
         <div class="expense-info">
           <div class="expense-desc">${escapeHTML(g.descripcion)}</div>
-          <div class="expense-cat">${escapeHTML(g.categoria)}<span class="dot">·</span>${escapeHTML(g.usuario || '')}</div>
+          <div class="expense-cat">${esCambioUSD(g) ? 'Cambio de dólares · no suma' : escapeHTML(g.categoria)}<span class="dot">·</span>${escapeHTML(g.usuario || '')}</div>
         </div>
         <div class="expense-amount">${formatMoney(g.monto)}</div>
         ${fotoEl}
@@ -1792,7 +1815,7 @@ function cambioAGasto() {
 
   // Pre-llena el formulario y abre el modal
   abrirAgregarGasto({
-    categoria: 'Efectivo',
+    categoria: 'Cambio USD',
     descripcion: `Cambio ${usd} USD @ ${rate} (Eldita/Julio)`,
     monto: mxn.toFixed(2)
   });
@@ -1835,7 +1858,7 @@ function exportarMes() {
   const mesActual = selectedMonth.getMonth();
   const yearActual = selectedMonth.getFullYear();
   const delMes = gastos.filter(g => {
-    const f = new Date(g.fecha);
+    const f = fechaLocal(g.fecha);
     return f.getMonth() === mesActual && f.getFullYear() === yearActual;
   });
 
@@ -1861,7 +1884,9 @@ function exportarTodo() {
 
 function descargarCSV(lista, nombre, mes, year) {
   // Ordenar por fecha
-  const ordenados = [...lista].sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  const todosOrdenados = [...lista].sort((a, b) => fechaLocal(a.fecha) - fechaLocal(b.fecha));
+  const ordenados = todosOrdenados.filter(g => !esCambioUSD(g));
+  const cambios   = todosOrdenados.filter(esCambioUSD);
 
   // Encabezado con metadata
   const titulo = (mes !== null)
@@ -1916,6 +1941,16 @@ function descargarCSV(lista, nombre, mes, year) {
     csv += `"${fecha}","${cat}","${desc}","${monto}","${usr}","${foto}"\r\n`;
   });
 
+  // Cambios de dólares: informativos, NO forman parte del total de gastos
+  if (cambios.length) {
+    csv += `\r\n`;
+    csv += `"CAMBIOS DE DÓLARES A PESOS (no se suman al total de gastos)"\r\n`;
+    csv += `"Fecha","Descripción","Monto MXN","Usuario"\r\n`;
+    cambios.forEach(g => {
+      csv += `"${g.fecha}","${String(g.descripcion || '').replace(/"/g, '""')}","${Number(g.monto || 0).toFixed(2)}","${String(g.usuario || '').replace(/"/g, '""')}"\r\n`;
+    });
+  }
+
   // Saldo de dólares al final
   csv += `\r\n`;
   csv += `"SALDO DE DÓLARES"\r\n`;
@@ -1943,6 +1978,22 @@ function formatearFechaArchivo(d) {
 }
 
 /* ===== HELPERS ===== */
+// "2026-05-01" -> fecha LOCAL (new Date("2026-05-01") la toma en UTC y en México
+// cae al día anterior, mandando los gastos del día 1 al mes pasado).
+function fechaLocal(str) {
+  const m = String(str || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  return new Date(str);
+}
+function hoyISO() {
+  return formatearFechaArchivo(new Date());
+}
+// Un cambio de dólares a pesos NO es un gasto: es el mismo dinero que después
+// se gasta y se registra en su categoría. Si se suma, se cuenta dos veces.
+function esCambioUSD(g) {
+  if (g.categoria === 'Cambio USD') return true;
+  return /^\s*cambio\b.*\busd\b/i.test(String(g.descripcion || ''));
+}
 function formatMoney(n) {
   return '$' + Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
