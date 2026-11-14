@@ -616,6 +616,57 @@
   .action-btn.delete:hover { background: var(--red); border-color: var(--red); }
 
   /* ============= PHOTO PREVIEW (form) ============= */
+  .photo-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .photo-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px 10px;
+    border: 1.5px solid var(--navy);
+    border-radius: 10px;
+    background: var(--bg-card);
+    color: var(--navy);
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: center;
+    transition: background 0.15s, color 0.15s;
+    text-transform: none;
+    letter-spacing: normal;
+    margin: 0;
+    min-height: 48px;
+  }
+  .field label.photo-btn {
+    display: flex;
+    font-size: 15px;
+    color: var(--navy);
+    text-transform: none;
+    letter-spacing: normal;
+    margin: 0;
+  }
+  .photo-btn:hover, .photo-btn:active, .field label.photo-btn:hover, .field label.photo-btn:active { background: var(--navy); color: #fff; }
+  .photo-input-hidden {
+    position: absolute;
+    width: 1px; height: 1px;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .photo-remove {
+    margin-top: 10px;
+    background: none;
+    border: none;
+    color: var(--red);
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
   .photo-preview {
     margin-top: 12px;
     border: 2px dashed var(--line);
@@ -1351,8 +1402,14 @@
       </div>
 
       <div class="field">
-        <label for="g-foto">📷 Foto del ticket o recibo (opcional)</label>
-        <input type="file" id="g-foto" accept="image/*" capture="environment">
+        <label>📷 Foto del ticket o recibo (opcional)</label>
+        <div class="photo-buttons">
+          <label class="photo-btn" for="g-foto-cam">📷 Tomar foto</label>
+          <label class="photo-btn" for="g-foto">🖼️ Elegir de galería</label>
+        </div>
+        <!-- Cámara: "capture" abre directo la cámara. Galería: SIN capture, para poder elegir fotos guardadas. -->
+        <input type="file" id="g-foto-cam" class="photo-input-hidden" accept="image/*" capture="environment">
+        <input type="file" id="g-foto" class="photo-input-hidden" accept="image/*">
         <div class="photo-preview" id="foto-preview">
           <span class="placeholder">No has elegido foto</span>
         </div>
@@ -1408,7 +1465,8 @@ let selectedMonth = new Date(); // mes mostrado en resumen e historial
 selectedMonth.setDate(1);        // día 1: así cambiar de mes nunca se salta uno (31 oct + 1 mes = 1 dic)
 let editingTimestamp = null;     // si != null, estamos editando
 let historialTodos = false;      // true = Historial muestra todos los meses agrupados
-let nuevoTimestamp = null;       // id fijo del gasto nuevo: si se reintenta, es el mismo gasto
+let nuevoTimestamp = null;
+let fotoSeleccionada = null;     // { base64, nombre } ya comprimida, de cámara o galería       // id fijo del gasto nuevo: si se reintenta, es el mismo gasto
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -1565,7 +1623,7 @@ function abrirAgregarGasto(prefill) {
   form.reset();
   document.getElementById('g-timestamp').value = '';
   document.getElementById('g-fecha').value = hoyISO();
-  document.getElementById('foto-preview').innerHTML = '<span class="placeholder">No has elegido foto</span>';
+  limpiarFoto();
 
   if (prefill) {
     if (prefill.categoria) document.getElementById('g-categoria').value = prefill.categoria;
@@ -1594,7 +1652,9 @@ function abrirEditarGasto(ts) {
   document.getElementById('g-categoria').value = g.categoria;
   document.getElementById('g-descripcion').value = g.descripcion;
   document.getElementById('g-monto').value = g.monto;
+  fotoSeleccionada = null;
   document.getElementById('g-foto').value = '';
+  document.getElementById('g-foto-cam').value = '';
 
   if (g.foto) {
     document.getElementById('foto-preview').innerHTML =
@@ -1613,17 +1673,26 @@ function cerrarFormModal() {
 
 /* ===== FORM SUBMIT (agregar o editar) ===== */
 function setupForm() {
-  const fileInput = document.getElementById('g-foto');
-  const preview   = document.getElementById('foto-preview');
+  const preview = document.getElementById('foto-preview');
 
-  fileInput.addEventListener('change', () => {
-    const f = fileInput.files[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      preview.innerHTML = `<span class="placeholder">Vista previa:</span><img src="${e.target.result}" alt="Vista previa">`;
-    };
-    reader.readAsDataURL(f);
+  ['g-foto', 'g-foto-cam'].forEach(id => {
+    const input = document.getElementById(id);
+    input.addEventListener('change', async () => {
+      const f = input.files[0];
+      input.value = '';            // permite volver a elegir la misma foto
+      if (!f) return;
+      preview.innerHTML = '<span class="placeholder"><span class="loader"></span> Preparando foto…</span>';
+      try {
+        const base64 = await comprimirImagen(f);
+        fotoSeleccionada = { base64, nombre: (f.name || 'ticket').replace(/\.[^.]+$/, '') + '.jpg' };
+        preview.innerHTML = `<span class="placeholder">Vista previa:</span><img src="data:image/jpeg;base64,${base64}" alt="Vista previa">
+          <div><button type="button" class="photo-remove" onclick="limpiarFoto()">Quitar foto</button></div>`;
+      } catch (err) {
+        console.error('Error al leer la foto:', err);
+        fotoSeleccionada = null;
+        preview.innerHTML = '<span class="placeholder" style="color:var(--red)">No se pudo leer esa foto. Prueba con otra o tómala con la cámara.</span>';
+      }
+    });
   });
 
   document.getElementById('form-gasto').addEventListener('submit', async (e) => {
@@ -1641,14 +1710,9 @@ function setupForm() {
       usuario:     currentUser.nombre
     };
 
-    const file = fileInput.files[0];
-    if (file) {
-      try {
-        data.fotoBase64 = await comprimirImagen(file);
-        data.fotoNombre = file.name;
-      } catch (err) {
-        console.error("Error al procesar foto:", err);
-      }
+    if (fotoSeleccionada) {
+      data.fotoBase64 = fotoSeleccionada.base64;
+      data.fotoNombre = fotoSeleccionada.nombre;
     }
 
     const anterior = editingTimestamp ? gastos.find(x => String(x.timestamp) === String(editingTimestamp)) : null;
@@ -1731,16 +1795,23 @@ async function eliminarGasto(ts) {
   }
 }
 
+function limpiarFoto() {
+  fotoSeleccionada = null;
+  document.getElementById('g-foto').value = '';
+  document.getElementById('g-foto-cam').value = '';
+  document.getElementById('foto-preview').innerHTML = '<span class="placeholder">No has elegido foto</span>';
+}
+
 function comprimirImagen(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        const maxW = 1280;
-        const ratio = Math.min(1, maxW / img.width);
-        const w = img.width * ratio;
-        const h = img.height * ratio;
+        const maxLado = 1600;   // tickets largos: limita ancho y alto
+        const ratio = Math.min(1, maxLado / img.width, maxLado / img.height);
+        const w = Math.round(img.width * ratio);
+        const h = Math.round(img.height * ratio);
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         const ctx = canvas.getContext('2d');
